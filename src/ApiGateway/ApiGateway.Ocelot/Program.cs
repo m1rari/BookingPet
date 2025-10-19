@@ -1,22 +1,21 @@
-using System.Text;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
+using ApiGateway.Ocelot.Handlers;
+using ApiGateway.Ocelot.Middleware;
+using ApiGateway.Ocelot.Services;
+using BookingPlatform.BuildingBlocks.Authentication;
+using Microsoft.AspNetCore.RateLimiting;
 using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 using Serilog;
-using ApiGateway.Ocelot.Services;
-using ApiGateway.Ocelot.Handlers;
+using System.Threading.RateLimiting;
 
 var builder = WebApplication.CreateBuilder(args);
-
-// ❌ УДАЛИТЕ эту строку - она вызывает дублирование
-// builder.Configuration.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
 
 // Serilog configuration
 Log.Logger = new LoggerConfiguration()
     .ReadFrom.Configuration(builder.Configuration)
     .Enrich.WithProperty("ServiceName", "ApiGateway")
-    .WriteTo.Console()
+    .Enrich.WithProperty("Environment", builder.Environment.EnvironmentName)
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {SourceContext}: {Message:lj}{NewLine}{Exception}")
     .CreateLogger();
 
 builder.Host.UseSerilog();
@@ -25,112 +24,220 @@ builder.Host.UseSerilog();
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
-// JWT Authentication
-var jwtSettings = builder.Configuration.GetSection("JwtSettings");
-var secretKey = jwtSettings["SecretKey"] ?? "YourSuperSecretKeyThatIsAtLeast32CharactersLong!";
+// 🔐 GATEWAY AUTHENTICATION - validates user tokens from IdentityServer
+builder.Services.AddGatewayAuthentication(builder.Configuration);
 
-builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-    .AddJwtBearer(options =>
-    {
-        options.TokenValidationParameters = new TokenValidationParameters
-        {
-            ValidateIssuer = true,
-            ValidateAudience = true,
-            ValidateLifetime = true,
-            ValidateIssuerSigningKey = true,
-            ValidIssuer = jwtSettings["Issuer"] ?? "BookingPlatform",
-            ValidAudience = jwtSettings["Audience"] ?? "BookingPlatformUsers",
-            IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey)),
-            ClockSkew = TimeSpan.Zero
-        };
-    });
+// 🔧 HttpClient and Token Service for service-to-service calls
+builder.Services.AddHttpClient<TokenService>(client =>
+{
+    client.Timeout = TimeSpan.FromSeconds(30);
+});
 
-builder.Services.AddAuthorization();
+// Memory cache for token caching
+builder.Services.AddMemoryCache();
 
-// HttpClient for getting tokens from IdentityServer
-builder.Services.AddHttpClient();
-
-// Register TokenService
-builder.Services.AddSingleton<ITokenService, TokenService>();
+// Register TokenService for getting service tokens
+builder.Services.AddScoped<ITokenService, TokenService>();n
+// Service Token Handler for Ocelot downstream calls
 builder.Services.AddTransient<ServiceTokenDelegatingHandler>();
 
-// Redis
+// 📊 Redis for distributed caching and rate limiting
+builder.Services.AddStackExchangeRedisCache(options =>
+{
+    options.Configuration = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
+    options.InstanceName = "BookingPlatform.Gateway";
+});
+
 builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
     return StackExchange.Redis.ConnectionMultiplexer.Connect(connectionString);
 });
 
-builder.Services.AddSingleton<StackExchange.Redis.IDatabase>(sp =>
+// 🚦 Rate Limiting
+builder.Services.AddRateLimiter(options =>
 {
-    var multiplexer = sp.GetRequiredService<StackExchange.Redis.IConnectionMultiplexer>();
-    return multiplexer.GetDatabase();
+    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
+        RateLimitPartition.GetFixedWindowLimiter(
+            partitionKey: context.User?.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
+            factory: _ => new FixedWindowRateLimiterOptions
+            {
+                PermitLimit = 100,
+                Window = TimeSpan.FromMinutes(1),
+                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
+                QueueLimit = 20
+            }));
+            
+    options.OnRejected = async (context, token) =>
+    {
+        context.HttpContext.Response.StatusCode = 429;
+        await context.HttpContext.Response.WriteAsync("Too many requests. Please try again later.", token);
+    };
 });
 
-// ПРАВИЛЬНЫЙ способ загрузки конфигурации Ocelot
+// 🔧 Ocelot Configuration
 builder.Configuration.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
 builder.Services
     .AddOcelot(builder.Configuration)
-    .AddDelegatingHandler<ServiceTokenDelegatingHandler>(global: true); // Применяется ко всем маршрутам
+    .AddDelegatingHandler<ServiceTokenDelegatingHandler>(global: true);
 
-// SwaggerForOcelot
+// 📚 Swagger for Ocelot
 builder.Services.AddSwaggerForOcelot(builder.Configuration);
 
-// CORS
+// 🌐 CORS
 builder.Services.AddCors(options =>
 {
-    options.AddPolicy("AllowAll", policy =>
+    if (builder.Environment.IsDevelopment())
     {
-        policy.AllowAnyOrigin()
-              .AllowAnyMethod()
-              .AllowAnyHeader();
+        options.AddPolicy("Development", policy =>
+        {
+            policy.AllowAnyOrigin()
+                  .AllowAnyMethod()
+                  .AllowAnyHeader();
+        });
+    }
+    
+    options.AddPolicy("Production", policy =>
+    {
+        policy.WithOrigins(
+                "http://localhost:3000",   // React dev
+                "http://localhost:4200",   // Angular dev
+                "https://bookingplatform.com",
+                "https://www.bookingplatform.com"
+            )
+            .AllowAnyMethod()
+            .AllowAnyHeader()
+            .AllowCredentials();
     });
 });
 
-// Health checks
+// 🏥 Health Checks
 builder.Services.AddHealthChecks()
-    .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379");
+    .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379")
+    .AddUrlGroup(new Uri(builder.Configuration["IdentityServer:Authority"] ?? "https://localhost:5001"), "IdentityServer")
+    .AddUrlGroup(new Uri("http://localhost:5002/health"), "Inventory.API")
+    .AddUrlGroup(new Uri("http://localhost:5003/health"), "Booking.API")
+    .AddUrlGroup(new Uri("http://localhost:5004/health"), "User.API")
+    .AddUrlGroup(new Uri("http://localhost:5005/health"), "Payment.API");
 
 var app = builder.Build();
 
-// Configure middleware
+// Configure middleware pipeline
 if (app.Environment.IsDevelopment())
 {
+    app.UseDeveloperExceptionPage();
     app.UseSwaggerForOcelotUI(opt =>
     {
         opt.PathToSwaggerGenerator = "/swagger/docs";
+        opt.OAuthClientId("booking.spa");
+        opt.OAuthAppName("Booking Platform API Gateway");
+        opt.OAuthUsePkce();
     });
+    app.UseCors("Development");
+}
+else
+{
+    app.UseExceptionHandler("/Error");
+    app.UseHsts();
+    app.UseCors("Production");
 }
 
-app.UseSerilogRequestLogging();
+// 🔒 Security Headers
+app.Use(async (context, next) =>
+{
+    context.Response.Headers.Add("X-Content-Type-Options", "nosniff");
+    context.Response.Headers.Add("X-Frame-Options", "DENY");
+    context.Response.Headers.Add("X-XSS-Protection", "1; mode=block");
+    context.Response.Headers.Add("Referrer-Policy", "strict-origin-when-cross-origin");
+    context.Response.Headers.Add("X-Powered-By", "BookingPlatform Gateway");
+    
+    await next();
+});
 
-// Custom middleware
-app.UseMiddleware<ApiGateway.Ocelot.Middleware.ErrorHandlingMiddleware>();
-app.UseMiddleware<ApiGateway.Ocelot.Middleware.RequestLoggingMiddleware>();
-app.UseMiddleware<ApiGateway.Ocelot.Middleware.ResponseCachingMiddleware>();
+// 📝 Logging
+app.UseSerilogRequestLogging(options =>
+{
+    options.MessageTemplate = 
+        "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms";
+    options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
+    {
+        diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
+        diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
+        diagnosticContext.Set("RemoteIpAddress", httpContext.Connection.RemoteIpAddress);
+        diagnosticContext.Set("UserAgent", httpContext.Request.Headers["User-Agent"].FirstOrDefault());
+        
+        var userId = httpContext.User?.Identity?.Name;
+        if (!string.IsNullOrEmpty(userId))
+        {
+            diagnosticContext.Set("UserId", userId);
+        }
+    };
+});
 
-app.UseCors("AllowAll");
+// 🚦 Rate Limiting
+app.UseRateLimiter();
 
+// 🌐 Custom Middleware
+app.UseMiddleware<ErrorHandlingMiddleware>();
+app.UseMiddleware<RequestLoggingMiddleware>();
+app.UseMiddleware<ResponseCachingMiddleware>();
+app.UseServiceTokenMiddleware(); // 🔑 Adds service tokens to downstream calls
+
+app.UseHttpsRedirection();
+
+// 🔐 Authentication & Authorization
 app.UseAuthentication();
 app.UseAuthorization();
 
-// Health check endpoints
+// 🏥 Health Check Endpoints
 app.MapHealthChecks("/health");
 app.MapHealthChecks("/health/ready");
+app.MapHealthChecks("/health/live");
 
-// Ocelot middleware
+// 📊 Gateway Statistics Endpoint
+app.MapGet("/api/v1/gateway/stats", async (HttpContext context) =>
+{
+    return new {
+        Gateway = "Booking Platform API Gateway",
+        Version = "1.0.0",
+        Environment = app.Environment.EnvironmentName,
+        Timestamp = DateTime.UtcNow,
+        IsAuthenticated = context.User?.Identity?.IsAuthenticated ?? false,
+        User = context.User?.Identity?.Name,
+        Services = new {
+            IdentityServer = builder.Configuration["IdentityServer:Authority"],
+            InventoryApi = "http://localhost:5002",
+            BookingApi = "http://localhost:5003",
+            UserApi = "http://localhost:5004",
+            PaymentApi = "http://localhost:5005"
+        }
+    };
+}).RequireAuthorization("UserPolicy");
+
+// 🔄 Token Refresh Endpoint
+app.MapPost("/api/v1/gateway/refresh-service-tokens", async (ITokenService tokenService) =>
+{
+    tokenService.ClearTokenCache();
+    return Results.Ok(new { Message = "Service token cache cleared", Timestamp = DateTime.UtcNow });
+}).RequireAuthorization("AdminPolicy");
+
+// 🎯 Ocelot Middleware - MUST be last!
 await app.UseOcelot();
 
 app.MapControllers();
 
 try
 {
-    Log.Information("Starting API Gateway");
+    Log.Information("Starting Booking Platform API Gateway on {Environment}", app.Environment.EnvironmentName);
+    Log.Information("Gateway will be available at: {Urls}", string.Join(", ", builder.WebHost.GetSetting("urls")?.Split(';') ?? new[] { "Not specified" }));
+    Log.Information("IdentityServer Authority: {Authority}", builder.Configuration["IdentityServer:Authority"]);
+    
     app.Run();
 }
 catch (Exception ex)
 {
     Log.Fatal(ex, "API Gateway terminated unexpectedly");
+    throw;
 }
 finally
 {
