@@ -93,4 +93,23 @@ public class TokenService : ITokenService
             _semaphore.Release();
         }
     }
+    
+    /// <summary>
+    /// Gets a cached service token, same as GetServiceTokenAsync but with different name for compatibility
+    /// </summary>
+    /// <returns>Cached access token for service-to-service calls</returns>
+    public async Task<string> GetCachedServiceTokenAsync()
+    {
+        return await GetServiceTokenAsync();
+    }
+    
+    /// <summary>
+    /// Clears the token cache, forcing a new token to be retrieved on the next call
+    /// </summary>
+    public void ClearTokenCache()
+    {
+        _logger.LogInformation("Clearing service token cache");
+        _cachedToken = null;
+        _tokenExpiry = DateTime.MinValue;
+    }
 }
