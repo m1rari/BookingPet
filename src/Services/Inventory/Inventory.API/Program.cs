@@ -1,4 +1,3 @@
-using BookingPlatform.BuildingBlocks.Authentication;
 using BuildingBlocks.Observability;
 using Inventory.Application.Commands.Handlers;
 using Inventory.Infrastructure;

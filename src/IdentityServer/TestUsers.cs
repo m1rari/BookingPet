@@ -1,7 +1,8 @@
 using Duende.IdentityServer.Test;
 using System.Security.Claims;
 using System.Text.Json;
-using IdentityModel;
+using Duende.IdentityModel;
+using Duende.IdentityServer;
 
 namespace IdentityServer;
 

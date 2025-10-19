@@ -1,5 +1,6 @@
-using BookingPlatform.BuildingBlocks.Authentication;
+using BuildingBlocks.Authentication;
 using System.Net.Http.Headers;
+using ApiGateway.Ocelot.Services;
 
 namespace ApiGateway.Ocelot.Middleware;
 

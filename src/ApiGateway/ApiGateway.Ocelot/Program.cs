@@ -1,7 +1,6 @@
 using ApiGateway.Ocelot.Handlers;
 using ApiGateway.Ocelot.Middleware;
 using ApiGateway.Ocelot.Services;
-using BookingPlatform.BuildingBlocks.Authentication;
 using Microsoft.AspNetCore.RateLimiting;
 using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
@@ -37,7 +36,7 @@ builder.Services.AddHttpClient<TokenService>(client =>
 builder.Services.AddMemoryCache();
 
 // Register TokenService for getting service tokens
-builder.Services.AddScoped<ITokenService, TokenService>();n
+builder.Services.AddScoped<ITokenService, TokenService>();
 // Service Token Handler for Ocelot downstream calls
 builder.Services.AddTransient<ServiceTokenDelegatingHandler>();
 
