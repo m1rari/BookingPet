@@ -1,0 +1,239 @@
+services:
+  # Databases
+  postgres-inventory:
+    image: postgres:15-alpine
+    container_name: postgres-inventory
+    environment:
+      POSTGRES_DB: InventoryDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - inventory-data:/var/lib/postgresql/data
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  postgres-booking:
+    image: postgres:15-alpine
+    container_name: postgres-booking
+    environment:
+      POSTGRES_DB: BookingDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - booking-data:/var/lib/postgresql/data
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  postgres-user:
+    image: postgres:15-alpine
+    container_name: postgres-user
+    environment:
+      POSTGRES_DB: UserDB
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5434:5432"
+    volumes:
+      - user-data:/var/lib/postgresql/data
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  sqlserver-payment:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver-payment
+    environment:
+      ACCEPT_EULA: "Y"
+      SA_PASSWORD: "YourStrong@Passw0rd"
+      MSSQL_DB: PaymentDB
+    ports:
+      - "1433:1433"
+    volumes:
+      - payment-data:/var/opt/mssql
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  mongodb-review:
+    image: mongo:7-alpine
+    container_name: mongodb-review
+    ports:
+      - "27017:27017"
+    volumes:
+      - review-data:/data/db
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  mongodb-analytics:
+    image: mongo:7-alpine
+    container_name: mongodb-analytics
+    ports:
+      - "27018:27017"
+    volumes:
+      - analytics-data:/data/db
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  # Message Broker
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: rabbitmq
+    ports:
+      - "5672:5672"   # AMQP port
+      - "15672:15672" # Management UI
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-data:/var/lib/rabbitmq
+    networks:
+      - booking-platform
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # Cache and Distributed Locks
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    networks:
+      - booking-platform
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Search Engine
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.11.0
+    container_name: elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ports:
+      - "9200:9200"
+      - "9300:9300"
+    volumes:
+      - elasticsearch-data:/usr/share/elasticsearch/data
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  # Service Discovery
+  consul:
+    image: hashicorp/consul:1.16-alpine
+    container_name: consul
+    ports:
+      - "8500:8500"
+      - "8600:8600/udp"
+    command: agent -server -ui -bootstrap-expect=1 -client=0.0.0.0
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  # Observability - Jaeger (Distributed Tracing)
+  jaeger:
+    image: jaegertracing/all-in-one:1.51-alpine
+    container_name: jaeger
+    ports:
+      - "5775:5775/udp"
+      - "6831:6831/udp"
+      - "6832:6832/udp"
+      - "5778:5778"
+      - "16686:16686" # Jaeger UI
+      - "14268:14268"
+      - "14250:14250"
+      - "9411:9411"
+    environment:
+      COLLECTOR_ZIPKIN_HOST_PORT: ":9411"
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  # Observability - Prometheus (Metrics)
+  prometheus:
+    image: prom/prometheus:v2.48-alpine
+    container_name: prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.path=/prometheus'
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  # Observability - Grafana (Dashboards)
+  grafana:
+    image: grafana/grafana:10.2-alpine
+    container_name: grafana
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_USERS_ALLOW_SIGN_UP=false
+    volumes:
+      - grafana-data:/var/lib/grafana
+    networks:
+      - booking-platform
+    restart: unless-stopped
+
+  # Identity Server
+  identityserver:
+    build:
+      context: .
+      dockerfile: src/IdentityServer/Dockerfile
+    container_name: identityserver
+    ports:
+      - "5005:8080"
+      - "5006:8081"
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ASPNETCORE_URLS=http://+:8080;https://+:8081
+      - ASPNETCORE_Kestrel__Certificates__Default__Password=password
+      - ASPNETCORE_Kestrel__Certificates__Default__Path=/https/aspnetapp.pfx
+    volumes:
+      - ~/.aspnet/https:/https:ro
+    networks:
+      - booking-platform
+    depends_on:
+      - redis
+    restart: unless-stopped
+
+volumes:
+  inventory-data:
+  booking-data:
+  user-data:
+  payment-data:
+  review-data:
+  analytics-data:
+  rabbitmq-data:
+  redis-data:
+  elasticsearch-data:
+  prometheus-data:
+  grafana-data:
+
+networks:
+  booking-platform:
+    driver: bridge

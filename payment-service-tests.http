@@ -1,0 +1,145 @@
+### Payment Service Test Requests
+### http://localhost:5004
+
+### ===================================================================
+### PAYMENT PROCESSING
+### ===================================================================
+
+### 1. Health Check
+GET http://localhost:5004/health
+
+### 2. Process Payment (Mock Mode - 90% success rate)
+POST http://localhost:5004/api/v1/payments
+Content-Type: application/json
+
+{
+  "bookingId": "b0000000-0000-0000-0000-000000000001",
+  "userId": "00000000-0000-0000-0000-000000000001",
+  "amount": 10000.00,
+  "currency": "RUB",
+  "paymentMethod": "CreditCard"
+}
+
+### 3. Process Payment - Different amount
+POST http://localhost:5004/api/v1/payments
+Content-Type: application/json
+
+{
+  "bookingId": "b0000000-0000-0000-0000-000000000002",
+  "userId": "00000000-0000-0000-0000-000000000001",
+  "amount": 5000.00,
+  "currency": "RUB",
+  "paymentMethod": "DebitCard"
+}
+
+### ===================================================================
+### REFUND OPERATIONS
+### ===================================================================
+
+### 4. Refund Payment
+# (замените {paymentId} на ID из предыдущего ответа)
+POST http://localhost:5004/api/v1/payments/YOUR-PAYMENT-ID-HERE/refund
+Content-Type: application/json
+
+{
+  "reason": "Customer requested cancellation"
+}
+
+### ===================================================================
+### CIRCUIT BREAKER TESTING
+### ===================================================================
+
+### 5. Test Circuit Breaker - Run this multiple times!
+# Run 3-5 times to trigger failures (10% failure rate)
+# Watch the logs for Circuit Breaker state changes!
+POST http://localhost:5004/api/v1/payments
+Content-Type: application/json
+
+{
+  "bookingId": "test-circuit-breaker-001",
+  "userId": "00000000-0000-0000-0000-000000000001",
+  "amount": 1000.00,
+  "currency": "RUB"
+}
+
+### Expected behavior:
+# - First 3-5 requests: Some succeed (90%), some fail (10%)
+# - After 3 failures: Circuit OPENS ⚠️
+# - Next requests: Immediate 503 (Service Unavailable)
+# - Wait 30 seconds: Circuit goes HALF-OPEN 🔄
+# - Test request: If success → Circuit CLOSED ✅
+
+### ===================================================================
+### RETRY POLICY TESTING
+### ===================================================================
+
+### 6. In Real Mode (MockMode: false):
+# Transient errors will trigger retries
+# Watch logs for:
+# "🔄 Retrying payment request, attempt 1 of 3"
+# "🔄 Retrying payment request, attempt 2 of 3"
+# "🔄 Retrying payment request, attempt 3 of 3"
+
+### ===================================================================
+### INTEGRATION WITH BOOKING SAGA
+### ===================================================================
+
+### Complete Flow:
+# 1. Booking Service creates booking
+# 2. Saga publishes InitiatePaymentIntegrationEvent
+# 3. Payment Service processes payment
+# 4. On Success: Publishes PaymentCompletedIntegrationEvent
+# 5. Booking Service confirms booking ✅
+
+# OR
+
+# 4. On Failure: Publishes PaymentFailedIntegrationEvent
+# 5. Booking Saga compensates (rollback) ❌
+
+### Check RabbitMQ:
+# http://localhost:15672 (guest/guest)
+# Queues → See PaymentCompleted/PaymentFailed events
+
+### ===================================================================
+### MONITORING
+### ===================================================================
+
+### 7. Prometheus Metrics
+GET http://localhost:5004/metrics
+
+### 8. Circuit Breaker Status
+# Check logs for:
+# - "⚠️ Circuit breaker OPENED"
+# - "✅ Circuit breaker CLOSED"
+# - "🔄 Circuit breaker HALF-OPEN"
+
+### ===================================================================
+### TEST DATA
+### ===================================================================
+
+# Booking IDs (from Booking DB):
+# b0000000-0000-0000-0000-000000000001 - Sample booking
+
+# User IDs:
+# 00000000-0000-0000-0000-000000000001 - Test user
+
+### ===================================================================
+### EXPECTED LOGS (Mock Mode)
+### ===================================================================
+
+# Success:
+# [INFO] Processing payment for booking {BookingId}
+# [INFO] ✅ Mock payment COMPLETED: TXN_xxxxx
+
+# Failure (10% chance):
+# [INFO] Processing payment for booking {BookingId}  
+# [WARN] ❌ Mock payment FAILED (simulated failure)
+
+# Circuit Breaker Opens:
+# [WARN] ⚠️ Circuit breaker OPENED due to failures - failing fast
+
+# Circuit Breaker Closes:
+# [INFO] ✅ Circuit breaker CLOSED - requests resumed
+
+### ===================================================================
+

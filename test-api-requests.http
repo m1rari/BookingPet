@@ -1,0 +1,121 @@
+### Advanced Booking Platform - Test API Requests
+### Используйте этот файл в VS Code с REST Client extension
+
+### ===================================================================
+### INVENTORY SERVICE - http://localhost:5001
+### ===================================================================
+
+### 1. Health Check
+GET http://localhost:5001/health
+
+### 2. Get existing resource (Conference Room Alpha)
+GET http://localhost:5001/api/v1/resources/a0000000-0000-0000-0000-000000000001
+
+### 3. Create new resource
+POST http://localhost:5001/api/v1/resources
+Content-Type: application/json
+
+{
+  "name": "Meeting Room Delta",
+  "description": "Small meeting room for team discussions",
+  "type": "MeetingRoom",
+  "address": "ул. Новая, 25",
+  "city": "Москва",
+  "country": "Россия",
+  "postalCode": "123460",
+  "maxPeople": 10,
+  "minPeople": 2,
+  "pricePerHour": 1500.00
+}
+
+### 4. Reserve a time slot
+# (замените {id} на GUID из предыдущего ответа)
+POST http://localhost:5001/api/v1/resources/a0000000-0000-0000-0000-000000000001/reserve
+Content-Type: application/json
+
+{
+  "startTime": "2025-10-25T10:00:00Z",
+  "endTime": "2025-10-25T12:00:00Z"
+}
+
+### ===================================================================
+### BOOKING SERVICE - http://localhost:5002  
+### ===================================================================
+
+### 5. Health Check
+GET http://localhost:5002/health
+
+### 6. Get existing booking
+GET http://localhost:5002/api/v1/bookings/b0000000-0000-0000-0000-000000000001
+
+### 7. Create new booking (SAGA Pattern!)
+POST http://localhost:5002/api/v1/bookings
+Content-Type: application/json
+
+{
+  "resourceId": "a0000000-0000-0000-0000-000000000001",
+  "userId": "00000000-0000-0000-0000-000000000001",
+  "startTime": "2025-10-26T09:00:00Z",
+  "endTime": "2025-10-26T11:00:00Z",
+  "pricePerHour": 5000.00
+}
+
+### 8. Cancel booking
+# (замените {id} на GUID из предыдущего ответа)
+POST http://localhost:5002/api/v1/bookings/b0000000-0000-0000-0000-000000000001/cancel
+Content-Type: application/json
+
+{
+  "reason": "Change of plans"
+}
+
+### ===================================================================
+### TESTING SCENARIOS
+### ===================================================================
+
+### Scenario 1: Happy Path
+# 1. Create resource (request #3)
+# 2. Reserve slot (request #4)
+# 3. Create booking (request #7)
+# 4. Check RabbitMQ for events!
+
+### Scenario 2: Conflict (Distributed Lock Test)
+# 1. Reserve slot (request #4)
+# 2. Immediately reserve same slot again
+# 3. Second request should fail with 409 Conflict!
+
+### Scenario 3: Saga Compensation
+# 1. Stop Payment Service
+# 2. Create booking (request #7)
+# 3. Saga will try to initiate payment
+# 4. On timeout - automatic compensation (Resource released, Booking Failed)
+
+### ===================================================================
+### RABBITMQ MANAGEMENT UI
+### ===================================================================
+
+### Open in browser:
+# http://localhost:15672
+# Username: guest
+# Password: guest
+
+### Check:
+# - Exchanges tab - see integration events exchanges
+# - Queues tab - see messages waiting
+# - Connections - see MassTransit consumers
+
+### ===================================================================
+### SAMPLE DATA IDs
+### ===================================================================
+
+# Resources:
+# a0000000-0000-0000-0000-000000000001 - Conference Room Alpha (50 people, 5000/hr)
+# a0000000-0000-0000-0000-000000000002 - Coworking Space Beta (20 people, 2000/hr)
+# a0000000-0000-0000-0000-000000000003 - Sports Field Gamma (30 people, 3000/hr)
+
+# Bookings:
+# b0000000-0000-0000-0000-000000000001 - Sample booking for Conference Room Alpha
+
+# Users:
+# 00000000-0000-0000-0000-000000000001 - Sample test user
+

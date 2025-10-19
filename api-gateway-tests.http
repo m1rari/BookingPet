@@ -1,0 +1,170 @@
+### API Gateway Test Requests
+### http://localhost:5000
+
+### ===================================================================
+### API GATEWAY HEALTH & STATS
+### ===================================================================
+
+### 1. Gateway Health Check
+GET http://localhost:5000/health
+
+### 2. Gateway Statistics
+GET http://localhost:5000/api/v1/gateway/stats
+
+### 3. Gateway Routes Info
+GET http://localhost:5000/api/v1/gateway/routes
+
+### 4. Clear Gateway Cache
+POST http://localhost:5000/api/v1/gateway/cache/clear
+
+### ===================================================================
+### SWAGGER DOCUMENTATION
+### ===================================================================
+
+### 5. Swagger UI (Aggregated)
+GET http://localhost:5000/swagger
+
+### 6. Individual Swagger JSONs
+GET http://localhost:5000/swagger/inventory/swagger.json
+GET http://localhost:5000/swagger/bookings/swagger.json
+GET http://localhost:5000/swagger/users/swagger.json
+GET http://localhost:5000/swagger/auth/swagger.json
+GET http://localhost:5000/swagger/payments/swagger.json
+
+### ===================================================================
+### ROUTED API CALLS (через Gateway)
+### ===================================================================
+
+### 6. Inventory Service через Gateway
+GET http://localhost:5000/api/v1/inventory/resources
+
+### 7. Booking Service через Gateway
+GET http://localhost:5000/api/v1/bookings/bookings
+
+### 8. User Service через Gateway (Auth)
+POST http://localhost:5000/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@gateway.com",
+  "password": "Test@123",
+  "firstName": "Gateway",
+  "lastName": "User"
+}
+
+### 9. User Service через Gateway (Login)
+POST http://localhost:5000/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "test@gateway.com",
+  "password": "Test@123"
+}
+
+### 10. Payment Service через Gateway
+POST http://localhost:5000/api/v1/payments/payments
+Content-Type: application/json
+
+{
+  "bookingId": "b0000000-0000-0000-0000-000000000001",
+  "userId": "00000000-0000-0000-0000-000000000001",
+  "amount": 5000.00,
+  "currency": "RUB"
+}
+
+### ===================================================================
+### JWT AUTHENTICATION TEST
+### ===================================================================
+
+### 11. Get JWT Token (from step 9)
+# Save the accessToken from login response
+
+### 12. Protected Endpoint with JWT
+GET http://localhost:5000/api/v1/users/users/me
+Authorization: Bearer YOUR_JWT_TOKEN_HERE
+
+### ===================================================================
+### RATE LIMITING TEST
+### ===================================================================
+
+### 13. Test Rate Limiting (run multiple times quickly)
+# Make 10+ requests to any endpoint quickly
+# Should see 429 Too Many Requests after limit exceeded
+
+GET http://localhost:5000/api/v1/inventory/resources
+
+### ===================================================================
+### CACHING TEST
+### ===================================================================
+
+### 14. Test Response Caching
+# First request - will be cached
+GET http://localhost:5000/api/v1/inventory/resources
+
+# Second request - should hit cache (faster response)
+GET http://localhost:5000/api/v1/inventory/resources
+
+# Check cache stats
+GET http://localhost:5000/api/v1/gateway/stats
+
+### ===================================================================
+### CORRELATION ID TEST
+### ===================================================================
+
+### 15. Test Correlation ID
+# Gateway automatically adds X-Correlation-ID header
+# Check response headers for correlation tracking
+
+GET http://localhost:5000/api/v1/inventory/resources
+
+### ===================================================================
+### ERROR HANDLING TEST
+### ===================================================================
+
+### 16. Test Error Handling
+# Request to non-existent endpoint
+GET http://localhost:5000/api/v1/nonexistent/service
+
+# Should return standardized error response with correlation ID
+
+### ===================================================================
+### LOAD BALANCING TEST (if multiple instances)
+### ===================================================================
+
+### 17. Test Load Balancing
+# If you have multiple service instances running
+# Gateway will distribute requests using RoundRobin
+
+GET http://localhost:5000/api/v1/inventory/resources
+
+### ===================================================================
+### EXPECTED BEHAVIORS
+### ===================================================================
+
+### Gateway Features:
+# ✅ Request Routing - Routes to correct microservice
+# ✅ JWT Authentication - Validates tokens on protected routes
+# ✅ Rate Limiting - 100-200 requests per minute per service
+# ✅ Response Caching - Caches GET requests for 5 minutes
+# ✅ Correlation ID - Tracks requests across services
+# ✅ Error Handling - Standardized error responses
+# ✅ Swagger Aggregation - Single UI for all services
+# ✅ Health Checks - Monitors all downstream services
+# ✅ Logging - Detailed request/response logging
+
+### Rate Limits per Service:
+# - Inventory: 100 req/min
+# - Bookings: 200 req/min  
+# - Users: 150 req/min
+# - Auth: 50 req/min
+# - Payments: 100 req/min
+
+### Cache Behavior:
+# - GET requests cached for 5 minutes
+# - Cache keys: api_gateway_cache:{path}:{query}
+# - Cache can be cleared via /api/v1/gateway/cache/clear
+
+### ===================================================================
+
+
+

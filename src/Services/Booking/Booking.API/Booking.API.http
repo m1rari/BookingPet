@@ -1,0 +1,37 @@
+@Booking.API_HostAddress = http://localhost:5058
+
+### Get all bookings
+GET {{Booking.API_HostAddress}}/api/v1/bookings
+Accept: application/json
+
+###
+
+### Get booking by ID
+GET {{Booking.API_HostAddress}}/api/v1/bookings/{{bookingId}}
+Accept: application/json
+
+###
+
+### Create a new booking
+POST {{Booking.API_HostAddress}}/api/v1/bookings
+Content-Type: application/json
+
+{
+  "resourceId": "550e8400-e29b-41d4-a716-446655440000",
+  "userId": "550e8400-e29b-41d4-a716-446655440001",
+  "startTime": "2024-01-15T10:00:00Z",
+  "endTime": "2024-01-15T12:00:00Z",
+  "pricePerHour": 50.00
+}
+
+###
+
+### Cancel a booking
+POST {{Booking.API_HostAddress}}/api/v1/bookings/{{bookingId}}/cancel
+Content-Type: application/json
+
+{
+  "reason": "User requested cancellation"
+}
+
+###

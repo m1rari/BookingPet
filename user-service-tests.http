@@ -1,0 +1,183 @@
+### Advanced Booking Platform - User Service Test Requests
+### http://localhost:5003
+
+### ===================================================================
+### AUTHENTICATION (Anonymous endpoints)
+### ===================================================================
+
+### 1. Register new user
+POST http://localhost:5003/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "ivan.petrov@example.com",
+  "password": "Test@123",
+  "firstName": "Иван",
+  "lastName": "Петров",
+  "role": "Customer"
+}
+
+### 2. Register Manager
+POST http://localhost:5003/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "manager@example.com",
+  "password": "Manager@123",
+  "firstName": "Анна",
+  "lastName": "Менеджер",
+  "role": "Manager"
+}
+
+### 3. Login user
+POST http://localhost:5003/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "ivan.petrov@example.com",
+  "password": "Test@123"
+}
+
+### Save the accessToken from response for next requests!
+
+### 4. Login with wrong password (test lockout after 5 attempts)
+POST http://localhost:5003/api/v1/auth/login
+Content-Type: application/json
+
+{
+  "email": "ivan.petrov@example.com",
+  "password": "WrongPassword123"
+}
+
+### ===================================================================
+### USER MANAGEMENT (Requires JWT Bearer token)
+### ===================================================================
+
+### Set this variable with token from login response
+@accessToken = eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
+
+### 5. Get current user info
+GET http://localhost:5003/api/v1/auth/me
+Authorization: Bearer {{accessToken}}
+
+### 6. Get user by ID
+GET http://localhost:5003/api/v1/users/00000000-0000-0000-0000-000000000001
+Authorization: Bearer {{accessToken}}
+
+### 7. Update user profile
+PUT http://localhost:5003/api/v1/users/YOUR-USER-ID-HERE
+Authorization: Bearer {{accessToken}}
+Content-Type: application/json
+
+{
+  "firstName": "Иван Updated",
+  "lastName": "Петров Updated"
+}
+
+### ===================================================================
+### HEALTH & METRICS
+### ===================================================================
+
+### 8. Health check
+GET http://localhost:5003/health
+
+### 9. Readiness check
+GET http://localhost:5003/health/ready
+
+### 10. Prometheus metrics
+GET http://localhost:5003/metrics
+
+### ===================================================================
+### TEST SCENARIOS
+### ===================================================================
+
+### Scenario 1: Complete Registration Flow
+# 1. Register user (request #1)
+# 2. Login (request #3) - get JWT tokens
+# 3. Get current user (request #5) - verify token works
+# 4. Update profile (request #7) - test authorization
+# 5. Check RabbitMQ for UserRegisteredIntegrationEvent!
+
+### Scenario 2: Lockout Protection
+# 1. Login with wrong password (request #4)
+# 2. Repeat 5 times
+# 3. 6th attempt will return "Account is locked out" error
+# 4. Wait 15 minutes or login with correct password
+
+### Scenario 3: Role-Based Access
+# 1. Register as Customer
+# 2. Login and get token
+# 3. Try to update ANOTHER user's profile
+# 4. Should receive 403 Forbidden
+
+### Scenario 4: JWT Token Flow
+# 1. Login - get accessToken and refreshToken
+# 2. Use accessToken for API calls
+# 3. When accessToken expires (60 min) - use refreshToken
+# 4. (Refresh token endpoint can be added later)
+
+### ===================================================================
+### SAMPLE DATA
+### ===================================================================
+
+# Pre-created roles:
+# - Customer: 10000000-0000-0000-0000-000000000001
+# - Manager:  10000000-0000-0000-0000-000000000002
+# - Admin:    10000000-0000-0000-0000-000000000003
+
+# Sample users (passwords are placeholders):
+# - admin@bookingplatform.com (Admin role)
+# - customer@test.com (Customer role)
+
+### ===================================================================
+### VALIDATION TESTS
+### ===================================================================
+
+### Invalid email format
+POST http://localhost:5003/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "not-an-email",
+  "password": "Test@123",
+  "firstName": "Test",
+  "lastName": "User"
+}
+
+### Weak password (missing uppercase)
+POST http://localhost:5003/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "weak@example.com",
+  "password": "test123",
+  "firstName": "Test",
+  "lastName": "User"
+}
+
+### Missing required fields
+POST http://localhost:5003/api/v1/auth/register
+Content-Type: application/json
+
+{
+  "email": "test@example.com",
+  "password": "Test@123"
+}
+
+### ===================================================================
+### INTEGRATION WITH OTHER SERVICES
+### ===================================================================
+
+# After User Service is running:
+# 1. Booking Service can use userId for creating bookings
+# 2. API Gateway can validate JWT tokens
+# 3. Other services can listen to UserRegisteredIntegrationEvent
+
+### Check RabbitMQ for events:
+# http://localhost:15672
+# Username: guest
+# Password: guest
+# Go to Queues tab - see UserRegisteredIntegrationEvent
+
+### ===================================================================
+
