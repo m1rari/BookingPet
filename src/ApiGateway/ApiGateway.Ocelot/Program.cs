@@ -1,7 +1,9 @@
 using ApiGateway.Ocelot.Handlers;
 using ApiGateway.Ocelot.Middleware;
 using ApiGateway.Ocelot.Services;
+using ApiGateway.Ocelot.Extensions;
 using Microsoft.AspNetCore.RateLimiting;
+using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 using Serilog;

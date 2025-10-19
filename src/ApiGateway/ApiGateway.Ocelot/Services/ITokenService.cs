@@ -10,4 +10,15 @@ public interface ITokenService
     /// </summary>
     /// <returns>Access token for service-to-service calls</returns>
     Task<string> GetServiceTokenAsync();
+    
+    /// <summary>
+    /// Gets a cached service token for inter-service communication
+    /// </summary>
+    /// <returns>Cached access token for service-to-service calls</returns>
+    Task<string> GetCachedServiceTokenAsync();
+    
+    /// <summary>
+    /// Clears the token cache
+    /// </summary>
+    void ClearTokenCache();
 }
