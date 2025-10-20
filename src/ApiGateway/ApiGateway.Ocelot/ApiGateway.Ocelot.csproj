@@ -19,14 +19,11 @@
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
     <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="8.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.Uris" Version="8.0.0" />
-    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.10" />
-    <PackageReference Include="Microsoft.AspNetCore.RateLimiting" Version="8.0.10" />
+    <PackageReference Include="Microsoft.Extensions.Caching.StackExchangeRedis" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
-    <ProjectReference Include="../../BuildingBlocks/Authentication/BookingPlatform.BuildingBlocks.Authentication.csproj" />
-    <ProjectReference Include="../../BuildingBlocks/Common/BookingPlatform.BuildingBlocks.Common.csproj" />
-    <ProjectReference Include="..\..\BuildingBlocks\Authentication\BuildingBlocks.Authentication\BuildingBlocks.Authentication.csproj" />
+    <ProjectReference Include="../../BuildingBlocks/Common/BuildingBlocks.Common/BuildingBlocks.Common.csproj" />
   </ItemGroup>
 
   <ItemGroup>

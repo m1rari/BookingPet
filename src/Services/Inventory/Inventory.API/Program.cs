@@ -2,6 +2,8 @@ using BuildingBlocks.Observability;
 using Inventory.Application.Commands.Handlers;
 using Inventory.Infrastructure;
 using Serilog;
+using Inventory.API.Extensions;
+
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -65,7 +67,7 @@ builder.Services.AddMediatR(cfg =>
 builder.Services.AddInfrastructure(builder.Configuration);
 
 // 🔐 SERVICE AUTHENTICATION - accepts tokens from IdentityServer (Gateway)
-builder.Services.AddServiceAuthentication(builder.Configuration, "inventory-service");
+builder.Services.AddServiceAuthentication(builder.Configuration);
 
 // Observability
 builder.Services.AddCustomOpenTelemetry(builder.Configuration, "inventory-service");

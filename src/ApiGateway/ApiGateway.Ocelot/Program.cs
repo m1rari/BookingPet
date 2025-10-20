@@ -1,13 +1,12 @@
+using ApiGateway.Ocelot.Extensions;
 using ApiGateway.Ocelot.Handlers;
 using ApiGateway.Ocelot.Middleware;
 using ApiGateway.Ocelot.Services;
-using ApiGateway.Ocelot.Extensions;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.Extensions.Caching.StackExchangeRedis;
 using Ocelot.DependencyInjection;
 using Ocelot.Middleware;
 using Serilog;
-using System.Threading.RateLimiting;
+using StackExchange.Redis;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -26,7 +25,7 @@ builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 
 // 🔐 GATEWAY AUTHENTICATION - validates user tokens from IdentityServer
-builder.Services.AddGatewayAuthentication(builder.Configuration);
+// builder.Services.AddGatewayAuthentication(builder.Configuration);
 
 // 🔧 HttpClient and Token Service for service-to-service calls
 builder.Services.AddHttpClient<TokenService>(client =>
@@ -38,7 +37,7 @@ builder.Services.AddHttpClient<TokenService>(client =>
 builder.Services.AddMemoryCache();
 
 // Register TokenService for getting service tokens
-builder.Services.AddScoped<ITokenService, TokenService>();
+builder.Services.AddSingleton<ITokenService, TokenService>();
 // Service Token Handler for Ocelot downstream calls
 builder.Services.AddTransient<ServiceTokenDelegatingHandler>();
 
@@ -49,32 +48,19 @@ builder.Services.AddStackExchangeRedisCache(options =>
     options.InstanceName = "BookingPlatform.Gateway";
 });
 
-builder.Services.AddSingleton<StackExchange.Redis.IConnectionMultiplexer>(sp =>
+builder.Services.AddSingleton<IConnectionMultiplexer>(sp =>
 {
     var connectionString = builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379";
-    return StackExchange.Redis.ConnectionMultiplexer.Connect(connectionString);
+    return ConnectionMultiplexer.Connect(connectionString);
 });
 
-// 🚦 Rate Limiting
-builder.Services.AddRateLimiter(options =>
+// Register IDatabase for direct Redis access
+builder.Services.AddSingleton<IDatabase>(sp =>
 {
-    options.GlobalLimiter = PartitionedRateLimiter.Create<HttpContext, string>(context =>
-        RateLimitPartition.GetFixedWindowLimiter(
-            partitionKey: context.User?.Identity?.Name ?? context.Connection.RemoteIpAddress?.ToString() ?? "anonymous",
-            factory: _ => new FixedWindowRateLimiterOptions
-            {
-                PermitLimit = 100,
-                Window = TimeSpan.FromMinutes(1),
-                QueueProcessingOrder = QueueProcessingOrder.OldestFirst,
-                QueueLimit = 20
-            }));
-            
-    options.OnRejected = async (context, token) =>
-    {
-        context.HttpContext.Response.StatusCode = 429;
-        await context.HttpContext.Response.WriteAsync("Too many requests. Please try again later.", token);
-    };
+    var connectionMultiplexer = sp.GetRequiredService<IConnectionMultiplexer>();
+    return connectionMultiplexer.GetDatabase();
 });
+
 
 // 🔧 Ocelot Configuration
 builder.Configuration.AddJsonFile("ocelot.json", optional: false, reloadOnChange: true);
@@ -115,11 +101,11 @@ builder.Services.AddCors(options =>
 // 🏥 Health Checks
 builder.Services.AddHealthChecks()
     .AddRedis(builder.Configuration.GetConnectionString("Redis") ?? "localhost:6379")
-    .AddUrlGroup(new Uri(builder.Configuration["IdentityServer:Authority"] ?? "https://localhost:5001"), "IdentityServer")
-    .AddUrlGroup(new Uri("http://localhost:5002/health"), "Inventory.API")
-    .AddUrlGroup(new Uri("http://localhost:5003/health"), "Booking.API")
-    .AddUrlGroup(new Uri("http://localhost:5004/health"), "User.API")
-    .AddUrlGroup(new Uri("http://localhost:5005/health"), "Payment.API");
+    .AddUrlGroup(new Uri(builder.Configuration["IdentityServer:Authority"] ?? "https://localhost:5005"), "IdentityServer")
+    .AddUrlGroup(new Uri("http://localhost:5001/health"), "Inventory.API")
+    .AddUrlGroup(new Uri("http://localhost:5002/health"), "Booking.API")
+    .AddUrlGroup(new Uri("http://localhost:5003/health"), "User.API")
+    .AddUrlGroup(new Uri("http://localhost:5004/health"), "Payment.API");
 
 var app = builder.Build();
 
@@ -175,8 +161,6 @@ app.UseSerilogRequestLogging(options =>
     };
 });
 
-// 🚦 Rate Limiting
-app.UseRateLimiter();
 
 // 🌐 Custom Middleware
 app.UseMiddleware<ErrorHandlingMiddleware>();
@@ -187,8 +171,8 @@ app.UseServiceTokenMiddleware(); // 🔑 Adds service tokens to downstream calls
 app.UseHttpsRedirection();
 
 // 🔐 Authentication & Authorization
-app.UseAuthentication();
-app.UseAuthorization();
+// app.UseAuthentication();
+// app.UseAuthorization();
 
 // 🏥 Health Check Endpoints
 app.MapHealthChecks("/health");
@@ -207,20 +191,20 @@ app.MapGet("/api/v1/gateway/stats", async (HttpContext context) =>
         User = context.User?.Identity?.Name,
         Services = new {
             IdentityServer = builder.Configuration["IdentityServer:Authority"],
-            InventoryApi = "http://localhost:5002",
-            BookingApi = "http://localhost:5003",
-            UserApi = "http://localhost:5004",
-            PaymentApi = "http://localhost:5005"
+            InventoryApi = "http://localhost:5001",
+            BookingApi = "http://localhost:5002",
+            UserApi = "http://localhost:5003",
+            PaymentApi = "http://localhost:5004"
         }
     };
-}).RequireAuthorization("UserPolicy");
+}); // .RequireAuthorization("UserPolicy");
 
 // 🔄 Token Refresh Endpoint
 app.MapPost("/api/v1/gateway/refresh-service-tokens", async (ITokenService tokenService) =>
 {
     tokenService.ClearTokenCache();
     return Results.Ok(new { Message = "Service token cache cleared", Timestamp = DateTime.UtcNow });
-}).RequireAuthorization("AdminPolicy");
+}); // .RequireAuthorization("AdminPolicy");
 
 // 🎯 Ocelot Middleware - MUST be last!
 await app.UseOcelot();

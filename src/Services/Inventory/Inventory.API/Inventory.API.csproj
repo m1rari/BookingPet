@@ -18,12 +18,12 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="5.0.1" />
     <PackageReference Include="AspNetCore.HealthChecks.NpgSql" Version="8.0.0" />
     <PackageReference Include="AspNetCore.HealthChecks.Redis" Version="8.0.0" />
+    <PackageReference Include="AspNetCore.HealthChecks.Uris" Version="8.0.0" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Inventory.Infrastructure\Inventory.Infrastructure.csproj" />
     <ProjectReference Include="..\..\..\BuildingBlocks\Observability\BuildingBlocks.Observability\BuildingBlocks.Observability.csproj" />
-    <ProjectReference Include="..\..\..\BuildingBlocks\Authentication\BuildingBlocks.Authentication\BuildingBlocks.Authentication.csproj" />
   </ItemGroup>
 
 </Project>

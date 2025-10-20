@@ -1,4 +1,4 @@
-using BuildingBlocks.Authentication;
+
 using System.Net.Http.Headers;
 using ApiGateway.Ocelot.Services;
 

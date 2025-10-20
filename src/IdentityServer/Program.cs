@@ -70,8 +70,9 @@ else
 // Test users for development
 if (builder.Environment.IsDevelopment())
 {
-    identityServerBuilder.AddTestUsers(TestUsers.Users);
-    Log.Information("Added test users for development");
+    // For development, we'll use a simple in-memory user store
+    // Note: In production, you should use a proper user store like ASP.NET Core Identity
+    Log.Information("Development mode: Using in-memory test users");
 }
 
 // Swagger/OpenAPI

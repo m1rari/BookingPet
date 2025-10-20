@@ -1,10 +1,20 @@
-using Duende.IdentityServer.Test;
 using System.Security.Claims;
 using System.Text.Json;
 using Duende.IdentityModel;
 using Duende.IdentityServer;
 
 namespace IdentityServer;
+
+/// <summary>
+/// Custom test user implementation for development purposes
+/// </summary>
+public class TestUser
+{
+    public string SubjectId { get; set; } = string.Empty;
+    public string Username { get; set; } = string.Empty;
+    public string Password { get; set; } = string.Empty;
+    public List<Claim> Claims { get; set; } = new();
+}
 
 /// <summary>
 /// Test users for development and testing purposes

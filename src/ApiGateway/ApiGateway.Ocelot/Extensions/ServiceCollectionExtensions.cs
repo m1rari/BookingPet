@@ -22,74 +22,75 @@ public static class ServiceCollectionExtensions
         var jwtSettings = configuration.GetSection("IdentityServer");
         var authority = jwtSettings["Authority"] ?? "https://localhost:5001";
         var audience = jwtSettings["Audience"] ?? "api.gateway";
-        
+
         services.AddAuthentication(options =>
-        {
-            options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
-            options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
-        })
-        .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
-        {
-            options.Authority = authority;
-            options.Audience = audience;
-            options.RequireHttpsMetadata = !configuration.GetValue<bool>("Development:DisableHttps");
-            
-            options.TokenValidationParameters = new TokenValidationParameters
             {
-                ValidateIssuer = true,
-                ValidateAudience = true, 
-                ValidateLifetime = true,
-                ValidateIssuerSigningKey = true,
-                ClockSkew = TimeSpan.FromMinutes(5),
-                
-                // For development
-                ValidIssuer = authority,
-                ValidAudience = audience
-            };
-            
-            options.Events = new JwtBearerEvents
+                options.DefaultAuthenticateScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultChallengeScheme = JwtBearerDefaults.AuthenticationScheme;
+                options.DefaultScheme = JwtBearerDefaults.AuthenticationScheme;
+            })
+            .AddJwtBearer(JwtBearerDefaults.AuthenticationScheme, options =>
             {
-                OnAuthenticationFailed = context =>
+                options.Authority = authority;
+                options.Audience = audience;
+                options.RequireHttpsMetadata = !configuration.GetValue<bool>("Development:DisableHttps");
+
+                options.TokenValidationParameters = new TokenValidationParameters
                 {
-                    var logger = context.HttpContext.RequestServices
-                        .GetRequiredService<ILogger<ServiceCollectionExtensions>>();
-                    logger.LogWarning("JWT Authentication failed: {Exception}", context.Exception?.Message);
-                    return Task.CompletedTask;
-                },
-                OnTokenValidated = context =>
+                    ValidateIssuer = true,
+                    ValidateAudience = true,
+                    ValidateLifetime = true,
+                    ValidateIssuerSigningKey = true,
+                    ClockSkew = TimeSpan.FromMinutes(5),
+
+                    // For development
+                    ValidIssuer = authority,
+                    ValidAudience = audience
+                };
+
+                options.Events = new JwtBearerEvents
                 {
-                    var logger = context.HttpContext.RequestServices
-                        .GetRequiredService<ILogger<ServiceCollectionExtensions>>();
-                    logger.LogDebug("JWT Token validated for user: {User}", 
-                        context.Principal?.Identity?.Name ?? "Unknown");
-                    return Task.CompletedTask;
-                }
-            };
-        });
-        
-        // Authorization policies
-        services.AddAuthorization(options =>
-        {
-            options.AddPolicy("UserPolicy", policy =>
-            {
-                policy.RequireAuthenticatedUser();
-                policy.RequireClaim("scope", "api.access");
+                    OnAuthenticationFailed = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices
+                            .GetRequiredService<ILogger<JwtBearerEvents>>();
+                        logger.LogWarning("JWT Authentication failed: {Exception}", context.Exception?.Message);
+                        return Task.CompletedTask;
+                    },
+                    OnTokenValidated = context =>
+                    {
+                        var logger = context.HttpContext.RequestServices
+                            .GetRequiredService<ILogger<JwtBearerEvents>>();
+                        logger.LogDebug("JWT Token validated for user: {User}",
+                            context.Principal?.Identity?.Name ?? "Unknown");
+                        return Task.CompletedTask;
+                    }
+                };
+
+                // Authorization policies
+                services.AddAuthorization(options =>
+                {
+                    options.AddPolicy("UserPolicy", policy =>
+                    {
+                        policy.RequireAuthenticatedUser();
+                        policy.RequireClaim("scope", "api.access");
+                    });
+
+                    options.AddPolicy("AdminPolicy", policy =>
+                    {
+                        policy.RequireAuthenticatedUser();
+                        policy.RequireClaim("role", "Admin");
+                    });
+
+                    options.AddPolicy("ServicePolicy", policy =>
+                    {
+                        policy.RequireAuthenticatedUser();
+                        policy.RequireClaim("client_id");
+                    });
+                });
+
+
             });
-            
-            options.AddPolicy("AdminPolicy", policy =>
-            {
-                policy.RequireAuthenticatedUser();
-                policy.RequireClaim("role", "Admin");
-            });
-            
-            options.AddPolicy("ServicePolicy", policy =>
-            {
-                policy.RequireAuthenticatedUser();
-                policy.RequireClaim("client_id");
-            });
-        });
-        
         return services;
     }
 }
